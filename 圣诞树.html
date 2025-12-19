@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>手势控制 3D 圣诞树 · Three.js + MediaPipe Hands</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: radial-gradient(circle at 20% 0%,
+                    #f8e7c6 0%, #1b2622 40%, #050608 100%);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: #f9f5e5;
+        }
+
+        body {
+            display: flex;
+            align-items: stretch;
+            justify-content: stretch;
+        }
+
+        /* 主容器：左侧 Three.js 画面，右上角控制信息 */
+        #app {
+            position: relative;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+
+        /* Three.js 渲染画布容器，加上“电影感”外发光 */
+        #three-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            border-radius: 28px;
+            overflow: hidden;
+            backdrop-filter: blur(20px) saturate(130%);
+            background: radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.8));
+            box-shadow:
+                0 0 80px rgba(255, 215, 120, 0.45),
+                0 0 160px rgba(198, 0, 60, 0.30),
+                0 40px 120px rgba(0, 0, 0, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        canvas#three-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            filter: saturate(115%) contrast(110%);
+        }
+
+        /* UI 顶栏 */
+        #hud {
+            position: absolute;
+            top: 18px;
+            left: 22px;
+            right: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            pointer-events: none;
+            z-index: 5;
+            text-shadow: 0 0 10px rgba(0, 0, 0, 0.6);
+        }
+
+        #title-block {
+            pointer-events: auto;
+        }
+
+        #title-block h1 {
+            font-size: 22px;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #ffe6a8;
+        }
+
+        #title-block h1 span {
+            color: #ff4358;
+        }
+
+        #title-block p {
+            font-size: 12px;
+            opacity: 0.82;
+            margin-top: 4px;
+        }
+
+        #control-panel {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
+            pointer-events: auto;
+        }
+
+        #control-panel .badge {
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: linear-gradient(120deg, rgba(255, 215, 120, 0.24), rgba(255, 88, 120, 0.4));
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            box-shadow: 0 0 14px rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(10px);
+        }
+
+        #control-panel label {
+            font-size: 11px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0, 0, 0, 0.45);
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        #control-panel input[type=file] {
+            font-size: 11px;
+        }
+
+        #state-indicator {
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: linear-gradient(120deg, rgba(0, 0, 0, 0.7), rgba(26, 82, 63, 0.9));
+            border: 1px solid rgba(173, 255, 204, 0.3);
+            box-shadow: 0 0 16px rgba(0, 0, 0, 0.7);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        #state-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #6cffb1;
+            box-shadow: 0 0 10px rgba(108, 255, 177, 0.9);
+        }
+
+        /* 手势提示浮层 */
+        #gesture-help {
+            position: absolute;
+            left: 22px;
+            bottom: 22px;
+            padding: 10px 12px;
+            border-radius: 18px;
+            background: radial-gradient(circle at 0 0, rgba(255, 255, 255, 0.16), rgba(0, 0, 0, 0.85));
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(14px);
+            font-size: 11px;
+            line-height: 1.7;
+            pointer-events: none;
+            max-width: 340px;
+        }
+
+        #gesture-help strong {
+            color: #ffe8a7;
+        }
+
+        #gesture-help span.g {
+            color: #ff6677;
+            font-weight: 600;
+        }
+
+        /* 摄像头预览（右下角小窗口） */
+        #camera-preview-wrapper {
+            position: absolute;
+            right: 22px;
+            bottom: 22px;
+            width: 220px;
+            height: 160px;
+            border-radius: 18px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            box-shadow: 0 0 22px rgba(0, 0, 0, 0.85);
+            background: radial-gradient(circle at 0 0, rgba(255, 255, 255, 0.2), rgba(5, 5, 5, 0.9));
+            display: flex;
+            flex-direction: column;
+            pointer-events: none;
+            backdrop-filter: blur(16px);
+        }
+
+        #camera-preview-title {
+            font-size: 11px;
+            padding: 4px 8px;
+            color: #ffe8b0;
+            text-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
+        }
+
+        #camera-preview {
+            position: relative;
+            flex: 1;
+            overflow: hidden;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        #input-video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+            /* 镜像，符合用户直觉 */
+        }
+
+        #hand-canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            transform: scaleX(-1);
+        }
+
+        /* 小屏适配 */
+        @media (max-width: 768px) {
+            #three-container {
+                border-radius: 0;
+            }
+
+            #gesture-help {
+                font-size: 10px;
+                max-width: 260px;
+            }
+
+            #camera-preview-wrapper {
+                width: 180px;
+                height: 130px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <div id="three-container">
+            <canvas id="three-canvas"></canvas>
+
+            <div id="hud">
+                <div id="title-block">
+                    <h1><span>Hand</span> Crafted Christmas Tree</h1>
+                    <p>用你的手势，唤醒一棵由粒子与记忆构成的 3D 圣诞树。</p>
+                </div>
+                <div id="control-panel">
+                    <div class="badge">Three.js · WebGL · MediaPipe Hands</div>
+                    <label>
+                        <span>上传照片（构成照片云）</span>
+                        <input id="photo-input" type="file" accept="image/*" multiple />
+                    </label>
+                    <div id="state-indicator">
+                        <div id="state-dot"></div>
+                        <span id="state-label">合拢态 · 圣诞树</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="gesture-help">
+                <strong>手势说明</strong><br>
+                <span class="g">✊ 握拳</span>：回到 <strong>合拢态</strong>（圣诞树收拢成经典轮廓）<br>
+                <span class="g">🖐 张开五指</span>：进入 <strong>散开态</strong>（粒子 &amp; 礼物在空间中漂浮）<br>
+                <span class="g">🤏 抓/捏</span>：从散开态中 <strong>抓住一张照片</strong> 并放大（照片放大态）<br>
+                <span class="g">🤲 手旋转 / 移动</span>：在散开态下，<strong>旋转 &amp; 环视</strong> 整棵圣诞树
+            </div>
+
+            <div id="camera-preview-wrapper">
+                <div id="camera-preview-title">MediaPipe Hands · 手势识别预览</div>
+                <div id="camera-preview">
+                    <video id="input-video" playsinline></video>
+                    <canvas id="hand-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Three.js -->
+    <script src="https://unpkg.com/three@0.159.0/build/three.min.js"></script>
+
+    <!-- MediaPipe Hands & camera utils -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+
+    <script>
+        // -------------------------------
+        // 场景 & 渲染初始化
+        // -------------------------------
+        const canvas = document.getElementById('three-canvas');
+        const renderer = new THREE.WebGLRenderer({
+            canvas,
+            antialias: true,
+            alpha: true
+        });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth - 32, window.innerHeight - 32);
+        renderer.outputEncoding = THREE.sRGBEncoding;
+
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x050608, 0.035);
+
+        const camera = new THREE.PerspectiveCamera(
+            45,
+            (window.innerWidth - 32) / (window.innerHeight - 32),
+            0.1,
+            200
+        );
+        camera.position.set(0, 3.8, 11);
+        scene.add(camera);
+
+        // 环境光 + 柔和点光源，金属金色调
+        const ambientLight = new THREE.AmbientLight(0xf8f2e7, 0.6);
+        scene.add(ambientLight);
+
+        const warmKeyLight = new THREE.PointLight(0xffe4b5, 1.5, 40);
+        warmKeyLight.position.set(6, 10, 8);
+        scene.add(warmKeyLight);
+
+        const redRimLight = new THREE.PointLight(0xff3355, 1.2, 40);
+        redRimLight.position.set(-8, 5, -6);
+        scene.add(redRimLight);
+
+        const greenFillLight = new THREE.PointLight(0x3bdc7b, 0.8, 40);
+        greenFillLight.position.set(0, 9, 0);
+        scene.add(greenFillLight);
+
+        // 轻微环境体积感
+        const floorGeo = new THREE.CircleGeometry(16, 64);
+        const floorMat = new THREE.MeshStandardMaterial({
+            color: 0x1b2622,
+            metalness: 0.6,
+            roughness: 0.85,
+            emissive: 0x00150a,
+            emissiveIntensity: 0.4
+        });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = -4;
+        scene.add(floor);
+
+        // -------------------------------
+        // 粒子圣诞树（InstancedMesh）
+        // -------------------------------
+        const GROUP_STATE = {
+            TREE: 'TREE',
+            SCATTER: 'SCATTER',
+            PHOTO_FOCUS: 'PHOTO_FOCUS'
+        };
+        let currentState = GROUP_STATE.TREE;
+        let targetState = GROUP_STATE.TREE;
+        let stateBlend = 0;       // 0=完全TREE, 1=完全SCATTER
+        let focusBlend = 0;       // 0=非照片放大，1=完全照片放大
+        let focusedPhoto = null;  // 当前放大的照片 Mesh
+
+        const ornamentGroup = new THREE.Group();
+        scene.add(ornamentGroup);
+
+        const coneHeight = 6.0;
+        const coneRadius = 2.6;
+        const ornamentCount = 320;
+
+        const ornamentBasePositions = [];
+        const ornamentScatterPositions = [];
+        const ornamentTypes = [];
+
+        // 三种材质：哑光绿主体 + 金属金 + 圣诞红
+        const baseGreenMat = new THREE.MeshStandardMaterial({
+            color: 0x264f35,
+            roughness: 0.9,
+            metalness: 0.25,
+            emissive: 0x0a1e14,
+            emissiveIntensity: 0.6
+        });
+        const goldMat = new THREE.MeshStandardMaterial({
+            color: 0xfad873,
+            roughness: 0.3,
+            metalness: 1.0,
+            emissive: 0x8b5a16,
+            emissiveIntensity: 0.7
+        });
+        const redMat = new THREE.MeshStandardMaterial({
+            color: 0xff3355,
+            roughness: 0.5,
+            metalness: 0.7,
+            emissive: 0x3a0208,
+            emissiveIntensity: 0.7
+        });
+
+        const sphereGeo = new THREE.SphereGeometry(0.12, 12, 12);
+        const boxGeo = new THREE.BoxGeometry(0.16, 0.16, 0.16);
+
+        const instancedCount = ornamentCount;
+        const ornamentMesh = new THREE.InstancedMesh(sphereGeo, baseGreenMat, instancedCount);
+        const ornamentMesh2 = new THREE.InstancedMesh(boxGeo, goldMat, instancedCount);
+        ornamentMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        ornamentMesh2.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+        ornamentGroup.add(ornamentMesh);
+        ornamentGroup.add(ornamentMesh2);
+
+        const dummy = new THREE.Object3D();
+
+        function randomConePosition() {
+            const h = Math.random() * coneHeight;
+            const radiusAtH = (coneRadius * (coneHeight - h)) / coneHeight + 0.2;
+            const angle = Math.random() * Math.PI * 2;
+            const x = Math.cos(angle) * radiusAtH;
+            const z = Math.sin(angle) * radiusAtH;
+            const y = h - coneHeight / 2;
+            return new THREE.Vector3(x, y + 0.4, z);
+        }
+
+        function randomScatterPosition() {
+            const r = 6 + Math.random() * 6;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.random() * Math.PI;
+            const x = r * Math.sin(phi) * Math.cos(theta);
+            const y = r * Math.cos(phi) - 1;
+            const z = r * Math.sin(phi) * Math.sin(theta);
+            return new THREE.Vector3(x, y, z);
+        }
+
+        for (let i = 0; i < ornamentCount; i++) {
+            const basePos = randomConePosition();
+            const scatterPos = randomScatterPosition();
+            ornamentBasePositions.push(basePos);
+            ornamentScatterPositions.push(scatterPos);
+            ornamentTypes.push(Math.random() < 0.5 ? 0 : 1); // 0 球，1 盒
+        }
+
+        function updateOrnamentsMatrices() {
+            for (let i = 0; i < ornamentCount; i++) {
+                const basePos = ornamentBasePositions[i];
+                const scatterPos = ornamentScatterPositions[i];
+
+                const pos = basePos.clone().lerp(scatterPos, stateBlend);
+                const scaleFactor = THREE.MathUtils.lerp(1.0, 1.4, stateBlend);
+                const swirl = stateBlend * 2.0;
+                const angleOffset = swirl * (pos.y * 0.3 + i * 0.03);
+                const finalX = pos.x * Math.cos(angleOffset) - pos.z * Math.sin(angleOffset);
+                const finalZ = pos.x * Math.sin(angleOffset) + pos.z * Math.cos(angleOffset);
+                const yFloat = pos.y + Math.sin(performance.now() * 0.0008 + i * 0.2) * stateBlend * 0.4;
+
+                dummy.position.set(finalX, yFloat, finalZ);
+                const s = scaleFactor * (0.6 + Math.random() * 0.6);
+                dummy.scale.set(s, s, s);
+                dummy.lookAt(0, pos.y, 0);
+                dummy.updateMatrix();
+
+                if (ornamentTypes[i] === 0) {
+                    ornamentMesh.setMatrixAt(i, dummy.matrix);
+                } else {
+                    ornamentMesh2.setMatrixAt(i, dummy.matrix);
+                }
+            }
+            ornamentMesh.instanceMatrix.needsUpdate = true;
+            ornamentMesh2.instanceMatrix.needsUpdate = true;
+        }
+
+        updateOrnamentsMatrices();
+
+        // 星星顶饰
+        const starGeo = new THREE.SphereGeometry(0.48, 12, 12);
+        const starMat = new THREE.MeshStandardMaterial({
+            color: 0xfff2a0,
+            metalness: 1.0,
+            roughness: 0.15,
+            emissive: 0xffe17a,
+            emissiveIntensity: 1.7
+        });
+        const star = new THREE.Mesh(starGeo, starMat);
+        star.position.set(0, coneHeight / 2 + 0.6, 0);
+        scene.add(star);
+
+        // 糖果棍（简单的红白条 cylinder + tube）
+        const candyGroup = new THREE.Group();
+        const candyMaterialWhite = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            metalness: 0.4,
+            roughness: 0.5,
+            emissive: 0x201f22,
+            emissiveIntensity: 0.4
+        });
+        const candyMaterialRed = new THREE.MeshStandardMaterial({
+            color: 0xff3355,
+            metalness: 0.4,
+            roughness: 0.6,
+            emissive: 0x2b0205,
+            emissiveIntensity: 0.5
+        });
+
+        const candyCount = 14;
+        for (let i = 0; i < candyCount; i++) {
+            const h = coneHeight * (0.2 + Math.random() * 0.7);
+            const radiusAtH = (coneRadius * (coneHeight - h)) / coneHeight + 0.3;
+            const angle = (i / candyCount) * Math.PI * 2 + Math.random() * 0.2;
+            const x = Math.cos(angle) * radiusAtH;
+            const z = Math.sin(angle) * radiusAtH;
+            const y = h - coneHeight / 2 + 0.2;
+
+            const bodyGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.2, 12);
+            const body = new THREE.Mesh(bodyGeo, candyMaterialWhite);
+            body.position.set(x, y, z);
+            body.lookAt(0, y, 0);
+            body.rotateX(-Math.PI / 4);
+
+            const hookCurve = new THREE.QuadraticBezierCurve3(
+                new THREE.Vector3(0, 0.6, 0),
+                new THREE.Vector3(0.3, 0.8, 0.2),
+                new THREE.Vector3(0.2, 1.0, 0.4)
+            );
+            const hookGeo = new THREE.TubeGeometry(hookCurve, 20, 0.08, 8, false);
+            const hook = new THREE.Mesh(hookGeo, candyMaterialRed);
+            hook.position.copy(body.position);
+            hook.quaternion.copy(body.quaternion);
+
+            candyGroup.add(body);
+            candyGroup.add(hook);
+        }
+        scene.add(candyGroup);
+
+        // 散景背景小粒子
+        const bokehGeo = new THREE.SphereGeometry(0.07, 8, 8);
+        const bokehMat = new THREE.MeshBasicMaterial({
+            color: 0xfff0cc,
+            transparent: true,
+            opacity: 0.5,
+            blending: THREE.AdditiveBlending
+        });
+        const bokehCount = 180;
+        const bokehMesh = new THREE.InstancedMesh(bokehGeo, bokehMat, bokehCount);
+        const bokehPositions = [];
+        for (let i = 0; i < bokehCount; i++) {
+            const r = 10 + Math.random() * 20;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.random() * Math.PI;
+            const x = r * Math.sin(phi) * Math.cos(theta);
+            const y = r * Math.cos(phi);
+            const z = r * Math.sin(phi) * Math.sin(theta);
+            bokehPositions.push(new THREE.Vector3(x, y, z));
+            dummy.position.set(x, y, z);
+            const s = 0.4 + Math.random() * 1
