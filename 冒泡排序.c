@@ -4,7 +4,7 @@ int main(int argc, const char *argv[])
 {
     system("chcp 65001");
     int biaoge[8] = {4, 2, 6, 7, 8, 0, 7, 5};
-    int i, j;
+    int i, j;1
     int temp;
     printf("原来的未排序的是:\n");
     for (i = 0; i < 8; i++)
