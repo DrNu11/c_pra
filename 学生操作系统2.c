@@ -25,8 +25,8 @@ int main()
             if (stu[j].height < stu[j + 1].height)
             {
                 temp = stu[j];
-                stu[j + 1] = stu[j];
-                stu[j] = temp;
+                stu[j] = stu[j + 1];
+                stu[j + 1] = temp;
             }
         }
     }
@@ -34,7 +34,7 @@ int main()
     for (i = 0; i < 5; i++)
     {
 
-        printf("姓名:%s,身高:%f\n", stu[i].name, stu[i].height);
+        printf("姓名:%s,身高:%.2f\n", stu[i].name, stu[i].height);
     }
     return 0;
 }
